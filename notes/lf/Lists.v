@@ -242,9 +242,9 @@ Abort.
 Theorem app_length : forall (lst1 lst2 : natlist),
   length (lst1 ++ lst2) = (length lst1) + (length lst2).
 Proof.
-  intros lst1 lst2. induction lst1 as [| h1 t1].
+  intros. induction lst1 as [| h t].
   - reflexivity.
-  - simpl. rewrite IHt1. reflexivity.
+  - simpl. rewrite -> IHt. reflexivity.
 Qed.
 
 (** Now we can complete the original proof. *)
@@ -252,13 +252,11 @@ Qed.
 Theorem rev_length : forall (lst : natlist),
   length (rev lst) = length lst.
 Proof.
-  intros lst. induction lst as [| h t].
+  intros. induction lst as [| h t].
   - reflexivity.
   - simpl. rewrite -> app_length.
-    simpl. rewrite -> IHt. rewrite add_comm.
-    reflexivity.
+    simpl. rewrite -> IHt. rewrite -> add_comm. reflexivity.
 Qed.
-
 (* ################################################################# *)
 (** * Options *)
 
@@ -329,7 +327,7 @@ Export NatList.  (* make the definitions from NatList available here *)
 
 Inductive partial_map : Type :=
 | Empty
-| Binding (k : nat) (v : nat) (m : partial_map).
+| Binding (k: nat) (v: nat) (m: partial_map).
 
 (** [partial_map] is similar to [nat_list], but the non-empty constructor
     carries an extra value. *)
@@ -352,8 +350,7 @@ Fixpoint find (k : nat) (m : partial_map) : natoption :=
 Theorem find_update : forall (m : partial_map) (k v : nat),
     find k (update k v m) = Some v.
 Proof.
-  intros m k v. simpl. rewrite eqb_refl. reflexivity.
+  intros. simpl. rewrite eqb_refl. reflexivity.
 Qed.
 
 End PartialMap.
-

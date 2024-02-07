@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"ocaml.sandbox": {
+			"kind": "opam",
+			"switch": "semantic"
+		},
+		"workbench.colorTheme": "Monokai",
+		"vscoq.goals.messages.full": true,
+	}
+}

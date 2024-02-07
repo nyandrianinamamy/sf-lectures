@@ -81,14 +81,73 @@ Proof.
 Theorem minus_n_n : forall n,
   n - n = 0.
 Proof.
-  (* WORK IN CLASS *) Admitted.
+  intros n. induction n as [| n' IHn'].
+  - reflexivity.
+  - simpl. rewrite -> IHn'. reflexivity. Qed.
 
 (** Here's another related fact about addition, which we'll
     need later. *)
 
+Theorem mul_0_r : forall n:nat,
+  n * 0 = 0.
+Proof.
+  intros n.
+  induction n.
+  - reflexivity.
+  - simpl. rewrite -> IHn. reflexivity. Qed.
+
+Theorem plus_n_Sm : forall n m : nat,
+  S (n + m) = n + (S m).
+Proof.
+  intros n m.
+  induction n.
+  - simpl. reflexivity.
+  - simpl. rewrite -> IHn. reflexivity.
+Qed.
+
+
 Theorem add_comm : forall n m : nat,
   n + m = m + n.
-    (* FILL IN HERE *) Admitted.
+Proof.
+  intros n m.
+  induction n.
+  - simpl. rewrite add_0_r. reflexivity.
+  - simpl. rewrite -> IHn. rewrite plus_n_Sm. reflexivity.
+Qed.
+
+Theorem add_assoc : forall n m p : nat,
+  n + (m + p) = (n + m) + p.
+Proof.
+  intros n m p.
+  induction n; simpl.
+  - reflexivity.
+  - rewrite -> IHn. reflexivity.
+Qed.
+
+Fixpoint double (n: nat): nat :=
+match n with
+| O => O 
+| S n' => S (S (double n'))
+end.
+
+Lemma double_plus: forall n, double n = n + n.
+Proof.
+  intros.
+  induction n.
+  - simpl. reflexivity.
+  - simpl. rewrite -> IHn. rewrite plus_n_Sm. reflexivity.
+Qed.
+
+Theorem eqb_refl : forall n : nat,
+  (n =? n) = true.
+Proof.
+  intros.
+  induction n.
+  - simpl. reflexivity.
+  - simpl. rewrite -> IHn. reflexivity.
+Qed.
+
+
 (* ################################################################# *)
 (** * Proofs Within Proofs *)
 
@@ -112,9 +171,11 @@ Proof.
   intros n m p q.
   (* We just need to swap (n + m) for (m + n)... seems
      like add_comm should do the trick! *)
-  rewrite add_comm.
+  (* rewrite add_comm. *)
+  assert (H: n + m = m + n).
+  { rewrite add_comm. reflexivity. }
+  rewrite H. reflexivity. Qed.
   (* Doesn't work... Coq rewrites the wrong plus! :-( *)
-Abort.
 
 (** To use [add_comm] at the point where we need it, we can introduce
     a local lemma stating that [n + m = m + n] (for the _particular_ [m]
@@ -192,11 +253,6 @@ Proof.
   (* FILL IN HERE *) Admitted.
 (** [] *)
 
-Theorem eqb_refl : forall n : nat,
-  (n =? n) = true.
-Proof.   (* FILL IN HERE *) Admitted.
-(** [] *)
-
 (** **** Exercise: 3 stars, standard, especially useful (mul_comm)
 
     Use [assert] to help prove [add_shuffle3].  You don't need to
@@ -205,7 +261,12 @@ Proof.   (* FILL IN HERE *) Admitted.
 Theorem add_shuffle3 : forall n m p : nat,
   n + (m + p) = m + (n + p).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros n m p.
+  rewrite add_assoc.
+  rewrite add_assoc.
+  assert (H: n+m = m+n).
+  { rewrite add_comm. reflexivity. }
+  rewrite H. reflexivity. Qed.
 
 (** Now prove commutativity of multiplication.  You will probably want
     to look for (or define and prove) a "helper" theorem to be used in
@@ -214,7 +275,9 @@ Proof.
 Theorem mul_comm : forall m n : nat,
   m * n = n * m.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros m n.
+  assert (H: m = (1 + pred m)).
+Admitted.
 (** [] *)
 
 (** **** Exercise: 2 stars, standard, optional (plus_leb_compat_l)
