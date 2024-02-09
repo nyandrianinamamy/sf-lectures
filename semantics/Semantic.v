@@ -73,9 +73,12 @@ Definition ceval (st: state) (c: com): option state :=
                     | None => None
                 end
     (* TODO: 0 as default value ? *)
-    (* What about alloc failed ? *)
-    | CAlloc x mu => let mu_ptr := fresh st mu in
-                Some (find_instance st x !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
+    | CAlloc x mu => let l := fresh st mu in
+                match l with
+                    | Some mu_ptr => 
+                        Some (find_instance st x !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
+                    | None => None
+                end
     end.
 
 Reserved Notation
@@ -99,13 +102,71 @@ Inductive cevalR: com -> state -> option state -> Prop :=
         st ={ aexp }=> None ->
         st =[ CAsgn x aexp ]=> None
         (* TODO: 0 as default value ? *)
-        (* What about alloc failed ? *)
-    | E_Alloc: 
-        forall st x mu,
-        let mu_ptr := fresh st mu in
+    | E_Alloc_Success: 
+        forall st x mu mu_ptr,
+        fresh_spec st mu (Some mu_ptr) ->
         st =[ CAlloc x mu ]=> Some (find_instance st x !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
+    | E_Alloc_Fail:
+        forall st x mu,
+        fresh_spec st mu None ->
+        st =[ CAlloc x mu ]=> None
 where "st '=[' c ']=>' st'" := (cevalR c st st') : type_scope.   
 
+
+(* Read and Written memory locations *)
+Fixpoint upsilon (st: state) (a: aexp): locset :=
+    match a with
+    | ANum n => LocSet.empty
+    | AId l => LocSet.singleton (l)
+    | <{ a1 + a2 }> => LocSet.union (upsilon st a1) (upsilon st a2)
+    end.
+
+Inductive upsilonR: state -> aexp -> locset -> Prop :=
+    | E_Ups_Num: 
+        forall st n, upsilonR st (ANum n) LocSet.empty
+    | E_Ups_Id: 
+        forall st l, upsilonR st (AId l) (LocSet.singleton l)
+    | E_Ups_Plus: 
+        forall st a1 a2 l1 l2,
+        upsilonR st a1 l1 -> upsilonR st a2 l2 -> upsilonR st <{ a1 + a2 }> (LocSet.union l1 l2).
+
+(* TODO: Fail if CAlloc because unsound ? *)
+Definition write (st: state) (c: com) : locset :=
+    match c with
+    | <{ skip }> => LocSet.empty
+    | <{ x := a }> => LocSet.singleton (find_instance st x) 
+    | <{ x := alloc mu }> => LocSet.singleton (find_instance st x) 
+    end.
+         
+Inductive writeR: state -> com -> locset -> Prop :=
+    | E_Write_CSkip: 
+        forall st,
+        writeR st <{ skip }> LocSet.empty
+    | E_Write_CAsn:
+        forall st x a,
+        writeR st <{ x := a }> (LocSet.singleton (find_instance st x))
+    | E_Write_CAlloc:
+        forall st x mu,
+        writeR st <{ x := alloc mu }> (LocSet.singleton (find_instance st x)).
+
+Definition read (st: state) (c: com) : locset :=
+    match c with
+    | CSkip => LocSet.empty
+    | CAsgn (x) (a) => upsilon st a 
+    | CAlloc (x) (mu) => LocSet.empty
+    end.
+
+Inductive readR: state -> com -> locset -> Prop :=
+    | E_Read_CSkip: 
+        forall st,
+        readR st CSkip LocSet.empty
+    | E_Read_CAsn:
+        forall st x a l,
+        upsilonR st a l ->
+        readR st <{ x := a }> l
+    | E_Read_CAlloc:
+        forall st x mu,
+        readR st <{ x := alloc mu }> LocSet.empty.
 
 (* Definition proj (st: state) (locs: locset): state :=
     MemMap.fold (

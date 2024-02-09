@@ -33,9 +33,30 @@ Definition gvar_loc (x:string) : loc := (x, 0).
 Definition find_instance (st: state) (x: var): loc :=
     (x, 0).
 
+
+(* Auxiliary function to create a fresh location *)
+Fixpoint fresh_aux (st: state) mu def fuel: option loc :=
+    match fuel with
+    | O => None (* No more fuel, return the default location *)
+    | S n =>
+        let l := (mu, def) in
+        if (MemMap.find l st) 
+        then fresh_aux st mu (def + 1) n
+        else Some l
+    end.
+
 (* Creates a fresh location in the state *)
-Definition fresh (st: state) (mu: string): loc :=
-    (mu, 0).
+(* None means too much allocation *)
+Definition fresh (st: state) (mu: string): option loc := 
+    fresh_aux st mu 0 100.
+
+Inductive fresh_spec (st: state) (mu: string): option loc -> Prop :=
+    | FreshSpec_None: fresh_spec st mu None
+    | FreshSpec_Some: forall l, ~ MemMap.In l st -> fresh_spec st mu (Some l).
+
 
 (* Default value for a newly allocated memory *)
 Definition def_init : value := VInt 0.
+
+
+(* Operation with states *)
