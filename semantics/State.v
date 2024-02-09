@@ -6,10 +6,13 @@ Require Import Coq.Structures.OrderedTypeEx.
 Require Import String.
 Require Import BinInt.
 
-Module Loc_as_OT := PairOrderedType(String_as_OT)(Nat_as_OT).
+Require Export Coq.FSets.FSetInterface.
+
+Module Import Loc_as_OT := PairOrderedType(String_as_OT)(Nat_as_OT).
 
 Module MemMap := FMapList.Make(Loc_as_OT).
 
+(* TODO: Should be replaced by MSet *)
 Module LocSet := FSetList.Make(Loc_as_OT).
 
 Definition loc := Loc_as_OT.t.

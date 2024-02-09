@@ -58,5 +58,6 @@ Inductive fresh_spec (st: state) (mu: string): option loc -> Prop :=
 (* Default value for a newly allocated memory *)
 Definition def_init : value := VInt 0.
 
+Definition empty_state : state := MemMap.empty value.
 
 (* Operation with states *)

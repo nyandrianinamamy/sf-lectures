@@ -1,6 +1,8 @@
 (* Global import *)
+Require Coq.MSets.MSetList.
 Require Import BinInt.
 Require Import Coq.Strings.String.
+
 
 (* Local import *)
 Require Import SEM.State.
@@ -27,8 +29,8 @@ Fixpoint aeval (st: state) (a: aexp): option value :=
     end.
 
 Reserved Notation
-         "st '={' aexp '}=>' value"
-         (at level 40, aexp custom com at level 99,
+         "st '={' a '}=>' value"
+         (at level 40, a constr,
           st constr, value constr at next level).
 
 Inductive aevalR: state -> aexp -> option value -> Prop :=
@@ -168,163 +170,121 @@ Inductive readR: state -> com -> locset -> Prop :=
         forall st x mu,
         readR st <{ x := alloc mu }> LocSet.empty.
 
-(* Definition proj (st: state) (locs: locset): state :=
+(* Projection on locsets *)
+Definition proj (st: state) (locs: locset): state :=
     MemMap.fold (
         fun k v acc => 
         if (LocSet.mem k locs) 
         then MemMap.add k v acc 
         else acc
-    ) st empty_state. *)
+    ) st empty_state.
+        
+Inductive projR: state -> locset -> state -> Prop :=
+    | E_Proj_Empty: 
+        forall st, projR st LocSet.empty empty_state
+    | E_Proj_Add: 
+        forall st locs k v acc,
+        (LocSet.mem k locs) = true ->
+        (MemMap.mem k st) = true ->
+        projR st locs (MemMap.add k v acc)
+    | E_Proj_NoAdd: 
+        forall st locs k acc,
+        LocSet.mem k locs = false ->
+        projR st locs acc.
 
-(* Example proj_1 : proj ((x_loc X) !-> VInt 1; (x_loc Y) !-> VInt 0; empty_state) (LocSet.singleton (x_loc X)) = ((x_loc X) !-> VInt 1; empty_state).
+Require Coq.FSets.FSetFacts.
+
+Lemma LocSet_mem_1 : 
+    forall l,
+     LocSet.mem l (LocSet.singleton l) = true.
 Proof.
-    unfold proj. simpl. reflexivity.
-Qed. *)
+    intros. apply LocSet.MF.mem_iff. rewrite LocSet.MF.singleton_iff. easy. 
+Qed.
 
-
-(* Require Coq.FSets.FSetFacts.
-Require Coq.FSets.FMapFacts. *)
-
-(* Search (MSet.mem _ MSet.empty). *)
-
-(* Search "fold". *)
-(* 
-Lemma fold_empty: forall f (m: MemMap.t value),
-    MemMap.fold f m (MemMap.empty value) = MemMap.empty value.
+Lemma MemMap_mem_1_old : 
+    forall (k: MemMap.key) (v: value) m,
+     MemMap.mem k (MemMap.add k v m) = true.
 Proof.
+    intros. rewrite MemMap.mem_1; try easy.
 Admitted.
 
+Require Import Coq.FSets.FMapFacts.
 
-Lemma proj_empty: forall st, (proj st LocSet.empty) = empty_state.
+Module Import P := WProperties_fun Loc_as_OT MemMap.
+Module Import F := P.F.
+
+Print Module F.
+
+
+Lemma MemMap_mem_add: 
+    forall (k: MemMap.key) (v: value) (m: MemMap.t value),
+     MemMap.mem k (MemMap.add k v m) = true.
 Proof.
-    intros. unfold proj. unfold LocSet.empty. unfold LocSet.mem. unfold empty_state. simpl. rewrite fold_empty. reflexivity.
-Qed.
-
-(* Lemma proj_singleton : forall l v st, proj (l !-> v; st) (singleton l) = (l !-> v; empty_state).
-Proof.
-Admitted. *)
-
-
-Definition write_locs (c: com) (st: state): locset :=
-    match c with
-    | CSkip => LocSet.empty
-    | CAsgn (x) _ => LocSet.singleton (x_loc x) 
-    | CAlloc (x) (mu) => LocSet.singleton (x_loc x) 
-    end.
-
-Definition upsilon (a: aexp) (st: state): locset :=
-    match a with
-    | ANum n => LocSet.empty
-    | AId l => LocSet.singleton (l)
-    | APlus _ _ => LocSet.empty
-    end.
-
-Definition read_locs (c: com) (st: state): locset :=
-    match c with
-    | CSkip => LocSet.empty
-    | CAsgn (x) (a) => upsilon a st 
-    | CAlloc (x) (mu) => LocSet.empty
-    end.
-
-
-Lemma proj_CSkip: forall st1 st1' st2 st2',
-    st1' = ceval st1 CSkip ->
-    st2' = ceval st2 CSkip ->
-    proj st1 (read_locs CSkip st1) = proj st2 (read_locs CSkip st2) ->
-    proj st1' (write_locs CSkip st1) = proj st2' (write_locs CSkip st2).
-Proof.
-    intros * Hst1 Hst2 Hproj; simpl in *; subst. try easy.
-Qed.
-
-Lemma proj_CAsn: forall st1 st1' st2 st2' x a v,
-    aeval st1 a = v ->
-    aeval st2 a = v ->
-    st1' = ceval st1 (CAsgn x a) ->
-    st2' = ceval st2 (CAsgn x a) ->
-    proj st1 (read_locs (CAsgn x a) st1) = proj st2 (read_locs (CAsgn x a) st2) ->
-    proj st1' (write_locs (CAsgn x a) st1) = proj st2' (write_locs (CAsgn x a) st2).
-Proof.
-    intros * Haeval1 Haeval2 Hst1' Hst2' Hproj; simpl in *.
-    rewrite Haeval1 in Hst1'. rewrite Haeval2 in Hst2'. unfold find_instance in *. unfold x_loc in *. rewrite Hst1'. rewrite Hst2'. rewrite proj_singleton. rewrite proj_singleton. reflexivity.
+    intros *.
+    rewrite F.mem_find_b. 
+    rewrite F.add_eq_o. easy. destruct k. easy.
 Qed.
 
 
-Lemma proj_CAsn_1: forall st1 st1' st2 st2' x a,
-    st1' = ceval st1 (CAsgn x a) ->
-    st2' = ceval st2 (CAsgn x a) ->
-    proj st1 (read_locs (CAsgn x a) st1) = proj st2 (read_locs (CAsgn x a) st2) ->
-    proj st1' (write_locs (CAsgn x a) st1) = proj st2' (write_locs (CAsgn x a) st2).
+Lemma proj_empty: 
+    forall st, 
+        projR st LocSet.empty empty_state.
 Proof.
-    intros * Hst1' Hst2' Hproj; simpl in *. unfold upsilon in *. destruct a; try easy.
-    - simpl in *. unfold find_instance in *. unfold x_loc in *. subst. rewrite proj_singleton. rewrite proj_singleton. reflexivity.
-    - simpl in *. unfold find_instance in *. unfold x_loc in *. subst. rewrite proj_singleton. rewrite proj_singleton. destruct (find l st1) eqn:Hfind1.
-      * destruct (find l st2) eqn:Hfind2.
-        -- assert (Hv: v = v0). admit. subst. reflexivity.
-        -- 
-Abort. *)
+    intros. apply E_Proj_Empty.
+Qed.
 
 
-(* Theorem proj_all: forall c st1 st1' st2 st2' a v,
-    aeval st1 a = v ->
-    aeval st2 a = v ->
-    st1' = ceval st1 c ->
-    st2' = ceval st2 c ->
-    proj st1 (read_locs c st1) = proj st2 (read_locs c st2) ->
-    proj st1' (write_locs c st1) = proj st2' (write_locs c st2).
+Lemma proj_singleton: forall st l v,
+    projR (l !-> v; st) (LocSet.singleton l) (l !-> v; empty_state).
 Proof.
-    intros * Haeval1 Haeval2 Hst1' Hst2' Hproj; simpl in *.
-    destruct c as [| x a' | x mu].
-    - apply proj_CSkip; easy.
-    -  *)
+    intros *. apply E_Proj_Add. apply LocSet_mem_1. apply MemMap_mem_add.
+Qed.
 
+(* For reuse *)
+Definition rw_template (c: com) (st1 st1' st2 st2': state) : Prop :=
+    ceval st1 c = Some st1' ->
+    ceval st2 c = Some st2' ->
+    LocSet.For_all (fun l => MemMap.mem l st1 = MemMap.mem l st2) (read st1 c) ->
+    LocSet.For_all (fun l => MemMap.mem l st1' = MemMap.mem l st2') (write st1 c).
 
-
-
-
-(* Theorem same_read_write_states: forall c st1 st1' st2 st2',
-    st1' = ceval st1 c ->
-    st2' = ceval st2 c ->
-    proj st1 (read_locs c st1) = proj st2 (read_locs c st2) ->
-    proj st1' (write_locs c st1) = proj st2' (write_locs c st2). *)
-
-
-(* Theorem same_read_write_states: forall c st1 st1' st2 st2',
-    st1' = ceval st1 c ->
-    st2' = ceval st2 c ->
-    proj st1 (read_locs c st1) = proj st2 (read_locs c st2) ->
-    proj st1' (write_locs c st1) = proj st2' (write_locs c st2).
+(* skip *)
+Lemma rw_skip:
+    forall st1 st1' st2 st2',
+    rw_template CSkip st1 st1' st2 st2'.
 Proof.
-    intros [] * Hst1 Hst2 Hproj; simpl in *; try easy.
-    - unfold proj. simpl. unfold empty_state. rewrite fold_empty. rewrite fold_empty. reflexivity.
-    - unfold find_instance in *. unfold x_loc. subst. rewrite proj_singleton. rewrite proj_singleton.
-      destruct a; simpl. try easy.
-       * unfold upsilon in Hproj. *)
-     (* x := a *) 
-    (* -  x := a 
-    unfold find_instance.
-        * destruct a.
-            -- unfold aeval. unfold x_loc. rewrite proj_singleton. rewrite proj_singleton. reflexivity.
-            -- unfold upsilon in Hproj. assert (Hl0: l0 = l). admit. subst. rewrite proj_singleton in Hproj. rewrite proj_singleton in Hproj. rewrite proj_singleton. rewrite proj_singleton. unfold x_loc.  *)
-            (* rewrite Hst1 in Hproj. rewrite Hst2 in Hproj. rewrite proj_singleton. rewrite proj_singleton in Hproj. *)
-                
-               
-                
-(* 
-Theorem same_read_write_states: forall c st1 st1' st2 st2' l reads1 writes1 reads2 writes2,
-    st1' = ceval st1 c ->
-    st2' = ceval st2 c ->
-    reads1 = read_locs c st1 ->
-    reads2 = read_locs c st2 ->
-    writes1 = write_locs c st1 ->
-    writes2 = write_locs c st2 ->
-    reads1 = reads2 ->
-    proj_rel l st1 st1' reads1 = proj_rel l st2 st2' reads2 ->
-    proj_rel l st1 st1' writes1 = proj_rel l st2 st2' writes2.
+    intros * Hc Hceval1 Hceval2 Hreads. subst.
+    unfold LocSet.For_all. intros. easy.
+Qed.
+
+(* x := n *)
+Lemma rw_asgn_int:
+    forall c n x  a st1 st1' st2 st2',
+    c = (CAsgn x a) ->
+    a = ANum n ->
+    rw_template c st1 st1' st2 st2'.
+
 Proof.
-    intros * Hceval1 Hceval2 Hreads1 Hreads2 Hwrites1 Hwrites2 Hreads Hproj. subst.
-    destruct c; simpl in *; try easy.
-    - (* x := a *) unfold find_instance in *. destruct a.
-        * simpl in *. unfold x_loc. unfold proj_rel in *. try auto 5. *)
+    intros * Hc Ha Hceval1 Hceval2 Hreads. subst. unfold ceval in *. unfold aeval in *. 
+    injection Hceval1 as Hceval1. injection Hceval2 as Hceval2. unfold find_instance in *. 
+    subst. unfold read in *. unfold upsilon in *. unfold write in *. unfold LocSet.For_all. intros.
+    unfold find_instance in *. rewrite LocSet.MF.singleton_iff in H. destruct H as [HL HR]. destruct x0. simpl in *. subst.
+    rewrite ?MemMap_mem_add. easy.
+Qed.
+
+(* x := l *)
+Lemma rw_asgn_loc:
+    forall c x a l v st1 st1' st2 st2',
+    c = (CAsgn x a) ->
+    a = AId l ->
+    MemMap.find l st1 = Some v ->
+    MemMap.find l st2 = Some v ->
+    rw_template c st1 st1' st2 st2'.
+Proof.
+    intros * Hc Ha Hst1 Hst2 Hceval1 Hceval2 Hreads. subst. unfold read in *. unfold upsilon in *. unfold write in *. unfold find_instance in *.
+    unfold ceval in *. unfold aeval in *. unfold find_instance in *. rewrite Hst1 in Hceval1. rewrite Hst2 in Hceval2. injection Hceval1 as Hceval1. injection Hceval2 as Hceval2.
+    subst.
+    unfold LocSet.For_all in *. intros. rewrite LocSet.MF.singleton_iff in H. destruct H as [HL HR]. destruct x0. simpl in *. subst.
+    rewrite ?MemMap_mem_add. easy.
+Qed. 
 
             
-
