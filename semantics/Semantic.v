@@ -209,20 +209,22 @@ Proof.
 Admitted.
 
 Require Import Coq.FSets.FMapFacts.
+Require Import Coq.FSets.FSetFacts.
 
 Module Import P := WProperties_fun Loc_as_OT MemMap.
-Module Import F := P.F.
+Module Import FMapFact := P.F.
 
-Print Module F.
+(* Print Module F. *)
 
+Module Import FSetFact := WFacts_fun Loc_as_OT LocSet.
 
 Lemma MemMap_mem_add: 
     forall (k: MemMap.key) (v: value) (m: MemMap.t value),
      MemMap.mem k (MemMap.add k v m) = true.
 Proof.
     intros *.
-    rewrite F.mem_find_b. 
-    rewrite F.add_eq_o. easy. destruct k. easy.
+    rewrite FMapFact.mem_find_b. 
+    rewrite FMapFact.add_eq_o. easy. destruct k. easy.
 Qed.
 
 
@@ -232,7 +234,6 @@ Lemma proj_empty:
 Proof.
     intros. apply E_Proj_Empty.
 Qed.
-
 
 Lemma proj_singleton: forall st l v,
     projR (l !-> v; st) (LocSet.singleton l) (l !-> v; empty_state).
@@ -264,10 +265,12 @@ Lemma rw_asgn_int:
     rw_template c st1 st1' st2 st2'.
 
 Proof.
-    intros * Hc Ha Hceval1 Hceval2 Hreads. subst. unfold ceval in *. unfold aeval in *. 
-    injection Hceval1 as Hceval1. injection Hceval2 as Hceval2. unfold find_instance in *. 
-    subst. unfold read in *. unfold upsilon in *. unfold write in *. unfold LocSet.For_all. intros.
-    unfold find_instance in *. rewrite LocSet.MF.singleton_iff in H. destruct H as [HL HR]. destruct x0. simpl in *. subst.
+    intros * Hc Ha Hceval1 Hceval2 Hreads. 
+    subst. unfold ceval in *. unfold aeval in *. unfold read in *. unfold upsilon in *. unfold write in *. unfold find_instance in *.
+    injection Hceval1 as Hceval1. injection Hceval2 as Hceval2.
+    subst.  
+    unfold LocSet.For_all in *. intros.
+    unfold find_instance in *. apply FSetFact.singleton_iff in H. destruct x0. simpl in *. destruct H. subst.
     rewrite ?MemMap_mem_add. easy.
 Qed.
 
@@ -280,10 +283,13 @@ Lemma rw_asgn_loc:
     MemMap.find l st2 = Some v ->
     rw_template c st1 st1' st2 st2'.
 Proof.
-    intros * Hc Ha Hst1 Hst2 Hceval1 Hceval2 Hreads. subst. unfold read in *. unfold upsilon in *. unfold write in *. unfold find_instance in *.
-    unfold ceval in *. unfold aeval in *. unfold find_instance in *. rewrite Hst1 in Hceval1. rewrite Hst2 in Hceval2. injection Hceval1 as Hceval1. injection Hceval2 as Hceval2.
+    intros * Hc Ha Hst1 Hst2 Hceval1 Hceval2 Hreads. 
+    subst. unfold ceval in *. unfold aeval in *. unfold read in *. unfold upsilon in *. unfold write in *. unfold find_instance in *.
+    rewrite Hst1 in *. rewrite Hst2 in *.
+    injection Hceval1 as Hceval1. injection Hceval2 as Hceval2.
     subst.
-    unfold LocSet.For_all in *. intros. rewrite LocSet.MF.singleton_iff in H. destruct H as [HL HR]. destruct x0. simpl in *. subst.
+    unfold LocSet.For_all in *. intros. 
+    apply FSetFact.singleton_iff in H. destruct x0. simpl in *. destruct H. subst.
     rewrite ?MemMap_mem_add. easy.
 Qed. 
 
