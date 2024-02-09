@@ -165,17 +165,29 @@ Proof.
   intros. unfold proj_env. 
 Admitted.
 
+Print Module stdpp.
+ 
+Lemma filter_1 : forall x e1, proj_env (map_insert x x e1) {[x]} = env.
+Proof.
+Admitted.
+
 Theorem proj_env_same: forall (m: mem) (e1 e2: env) (stmt: stmt) (r1 r2: vars),
-  r2 = read_vars stmt e2 /\
-  r1 = read_vars stmt e1 /\
-  r1 = r2 /\
+  r2 = read_vars stmt e2 ->
+  r1 = read_vars stmt e1 ->
+  r1 = r2 ->
   proj_env e1 r1 = proj_env e2 r2  
     -> proj_env (snd(eval_stmt m e1 stmt)) (write_vars stmt e1) = proj_env (snd(eval_stmt m e2 stmt)) (write_vars stmt e2).
 Proof.
-  intros. destruct H. destruct H0. destruct H1. destruct stmt0.
+  intros * Hr2 Hr1 -> Hpenv. destruct stmt0; simpl in *; try easy. subst.
+  (* x |-> x *)
+  unfold proj_env. Search filter.
+  (* induction e1, e2. *)
+  (* - destruct (e1 !! x), (e2 !! x); try easy.
+    * induction *)
+  
+  (* intros. destruct H. destruct H0. destruct H1. destruct stmt0.
   - simpl. simpl in H. simpl in H0. rewrite -> H0 in H2. rewrite -> H in H2. assumption.
   - simpl in H. simpl in H0. destruct e.
-    + simpl. destruct (e2 !! x) eqn:He2x.
-      * destruct (e1 !! x) eqn:He1x.
-        -- simpl in H2.
-Abort.
+    + simpl. destruct (e1 !! x).
+      * destruct (e2 !! x).
+Abort. *)
