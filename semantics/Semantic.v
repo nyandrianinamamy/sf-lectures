@@ -2,6 +2,8 @@
 Require Coq.MSets.MSetList.
 Require Import BinInt.
 Require Import Coq.Strings.String.
+Require Import Coq.FSets.FMapFacts.
+Require Import Coq.FSets.FSetFacts.
 
 
 (* Local import *)
@@ -67,20 +69,25 @@ Fixpoint beval (st: state) (b: bexp): bool :=
     | <{~b1}> => negb (beval st b1)
     end. 
 
-Definition ceval (st: state) (c: com): option state :=
+(* We chose None to differentiate normal termination and out of gas (when adding loops later) *)
+Fixpoint ceval (st: state) (c: com): option state :=
     match c with 
     | CSkip => Some st
+    | CSeq c1 c2 => match ceval st c1 with
+                        | Some st' => ceval st' c2
+                        | None => None
+                    end
     | CAsgn x a => match aeval st a with
-                    | Some v => Some (find_instance st x !-> v; st)
-                    | None => None
-                end
+                        | Some v => Some ((find_instance st x) !-> v; st)
+                        | None => None
+                    end
     (* TODO: 0 as default value ? *)
-    | CAlloc x mu => let l := fresh st mu in
-                match l with
-                    | Some mu_ptr => 
-                        Some (find_instance st x !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
-                    | None => None
-                end
+    | CAlloc x mu =>let l := fresh st mu in
+                        match l with
+                            | Some mu_ptr => 
+                                Some (find_instance st x !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
+                            | None => None
+                        end
     end.
 
 Reserved Notation
@@ -91,14 +98,19 @@ Reserved Notation
 Inductive cevalR: com -> state -> option state -> Prop :=
     | E_Skip: 
         forall st, st =[ CSkip ]=> Some st
-    | E_Asgn_Int: 
-        forall st x aexp n,
-        st ={ aexp }=> Some (VInt n) ->
-        st =[ CAsgn x aexp ]=> Some (find_instance st x !-> (VInt n); st)
-    | E_Asgn_Ptr: 
+    | E_Seq:
+        forall st st' st'' c1 c2,
+        st =[ c1 ]=> Some st' ->
+        st' =[ c2 ]=> st'' ->
+        st =[ CSeq c1 c2 ]=> st''
+    | E_Asgn: 
+        forall (st:state) x aexp v,
+        st ={ aexp }=> Some v ->
+        st =[ CAsgn x aexp ]=> Some (find_instance st x !-> v; st)
+    (* | E_Asgn_Ptr: 
         forall st x aexp loc,
         st ={ aexp }=> Some (VPtr loc) ->
-        st =[ CAsgn x aexp ]=> Some (find_instance st x !-> (VPtr loc); st)
+        st =[ CAsgn x aexp ]=> Some (find_instance st x !-> (VPtr loc); st) *)
     | E_Asgn_Undef: 
         forall st x aexp,
         st ={ aexp }=> None ->
@@ -133,9 +145,10 @@ Inductive upsilonR: state -> aexp -> locset -> Prop :=
         upsilonR st a1 l1 -> upsilonR st a2 l2 -> upsilonR st <{ a1 + a2 }> (LocSet.union l1 l2).
 
 (* TODO: Fail if CAlloc because unsound ? *)
-Definition write (st: state) (c: com) : locset :=
+Fixpoint write (st: state) (c: com) : locset :=
     match c with
     | <{ skip }> => LocSet.empty
+    | <{ c1 ; c2 }> => LocSet.union (write st c1) (write st c2)
     | <{ x := a }> => LocSet.singleton (find_instance st x) 
     | <{ x := alloc mu }> => LocSet.singleton (find_instance st x) 
     end.
@@ -144,6 +157,11 @@ Inductive writeR: state -> com -> locset -> Prop :=
     | E_Write_CSkip: 
         forall st,
         writeR st <{ skip }> LocSet.empty
+    | E_Write_CSeq:
+        forall st c1 c2 l1 l2,
+        writeR st c1 l1 -> 
+        writeR st c2 l2 -> 
+        writeR st <{ c1 ; c2 }> (LocSet.union l1 l2)
     | E_Write_CAsn:
         forall st x a,
         writeR st <{ x := a }> (LocSet.singleton (find_instance st x))
@@ -151,9 +169,10 @@ Inductive writeR: state -> com -> locset -> Prop :=
         forall st x mu,
         writeR st <{ x := alloc mu }> (LocSet.singleton (find_instance st x)).
 
-Definition read (st: state) (c: com) : locset :=
+Fixpoint read (st: state) (c: com) : locset :=
     match c with
     | CSkip => LocSet.empty
+    | CSeq c1 c2 => LocSet.union (read st c1) (read st c2)
     | CAsgn (x) (a) => upsilon st a 
     | CAlloc (x) (mu) => LocSet.empty
     end.
@@ -162,6 +181,11 @@ Inductive readR: state -> com -> locset -> Prop :=
     | E_Read_CSkip: 
         forall st,
         readR st CSkip LocSet.empty
+    | E_Read_CSeq:
+        forall st c1 c2 l1 l2,
+        readR st c1 l1 -> 
+        readR st c2 l2 -> 
+        readR st <{ c1 ; c2 }> (LocSet.union l1 l2)
     | E_Read_CAsn:
         forall st x a l,
         upsilonR st a l ->
@@ -170,29 +194,6 @@ Inductive readR: state -> com -> locset -> Prop :=
         forall st x mu,
         readR st <{ x := alloc mu }> LocSet.empty.
 
-(* Projection on locsets *)
-Definition proj (st: state) (locs: locset): state :=
-    MemMap.fold (
-        fun k v acc => 
-        if (LocSet.mem k locs) 
-        then MemMap.add k v acc 
-        else acc
-    ) st empty_state.
-        
-Inductive projR: state -> locset -> state -> Prop :=
-    | E_Proj_Empty: 
-        forall st, projR st LocSet.empty empty_state
-    | E_Proj_Add: 
-        forall st locs k v acc,
-        (LocSet.mem k locs) = true ->
-        (MemMap.mem k st) = true ->
-        projR st locs (MemMap.add k v acc)
-    | E_Proj_NoAdd: 
-        forall st locs k acc,
-        LocSet.mem k locs = false ->
-        projR st locs acc.
-
-Require Coq.FSets.FSetFacts.
 
 Lemma LocSet_mem_1 : 
     forall l,
@@ -200,23 +201,6 @@ Lemma LocSet_mem_1 :
 Proof.
     intros. apply LocSet.MF.mem_iff. rewrite LocSet.MF.singleton_iff. easy. 
 Qed.
-
-Lemma MemMap_mem_1_old : 
-    forall (k: MemMap.key) (v: value) m,
-     MemMap.mem k (MemMap.add k v m) = true.
-Proof.
-    intros. rewrite MemMap.mem_1; try easy.
-Admitted.
-
-Require Import Coq.FSets.FMapFacts.
-Require Import Coq.FSets.FSetFacts.
-
-Module Import P := WProperties_fun Loc_as_OT MemMap.
-Module Import FMapFact := P.F.
-
-(* Print Module F. *)
-
-Module Import FSetFact := WFacts_fun Loc_as_OT LocSet.
 
 Lemma MemMap_mem_add: 
     forall (k: MemMap.key) (v: value) (m: MemMap.t value),
@@ -227,20 +211,7 @@ Proof.
     rewrite FMapFact.add_eq_o. easy. destruct k. easy.
 Qed.
 
-
-Lemma proj_empty: 
-    forall st, 
-        projR st LocSet.empty empty_state.
-Proof.
-    intros. apply E_Proj_Empty.
-Qed.
-
-Lemma proj_singleton: forall st l v,
-    projR (l !-> v; st) (LocSet.singleton l) (l !-> v; empty_state).
-Proof.
-    intros *. apply E_Proj_Add. apply LocSet_mem_1. apply MemMap_mem_add.
-Qed.
-
+(* Computational rw *)
 (* For reuse *)
 Definition rw_template (c: com) (st1 st1' st2 st2': state) : Prop :=
     ceval st1 c = Some st1' ->
@@ -293,4 +264,120 @@ Proof.
     rewrite ?MemMap_mem_add. easy.
 Qed. 
 
-            
+(* c1; c2 *)
+Lemma rw_seq_skip_skip:
+    forall c1 c2 st1 st1' st2 st2',
+    c1 = CSkip ->
+    c2 = CSkip ->
+    rw_template (CSeq c1 c2) st1 st1' st2 st2'.
+Proof.
+    intros * Hc1 Hc2 Hceval1 Hceval2 Hreads. subst. easy.
+Qed.
+
+Lemma rw_seq_skip_c2:
+    forall c1 c2 st1 st1' st2 st2',
+    c1 = CSkip ->
+    rw_template (CSeq c1 c2) st1 st1' st2 st2'.
+Proof.
+    intros * Hc1 Hceval1 Hceval2 Hreads. subst. simpl in *.
+Abort.
+(* End computational rw *)
+
+(* Relational RW *)
+
+Print FSetFact. 
+
+
+Lemma rw_skipR:
+    forall st1 st1' st2 st2' reads writes,
+    st1 =[ CSkip ]=> Some st1' ->
+    st2 =[ CSkip ]=> Some st2' ->
+    readR st1 CSkip reads ->
+    writeR st1 CSkip writes ->
+    (forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
+    (forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
+Proof.
+    intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
+    inversion Hceval1. inversion Hceval2. subst.
+    inversion Hreads. inversion Hwrites. subst.
+    intros.
+    specialize (Hsamereads l H). 
+    apply Hsamereads.
+Qed.
+
+
+Lemma MemMap_find_1:
+    forall (k: MemMap.key) (v: value) (m: MemMap.t value),
+     MemMap.find (elt:=value) k (k !-> v; m) = Some v.
+Proof.
+    destruct k. intros. 
+    apply FMapFact.add_eq_o. easy.
+Qed.
+
+Lemma LocSet_singleton_iff:
+    forall l l',
+    LocSet.In l (LocSet.singleton l') <-> l = l'.
+Proof.
+    intros *.
+    destruct l; destruct l'; split; intros H;
+    rewrite FSetFact.singleton_iff in *; 
+    destruct H; simpl in *; 
+    subst; easy.
+Qed.
+
+(* x := n *)
+Lemma rw_asgnR:
+    forall st1 st1' st2 st2' reads writes x a,
+    st1 =[ <{ x:=a }> ]=> Some st1' ->
+    st2 =[ <{ x:=a }> ]=> Some st2' ->
+    readR st1 (<{ x:=a }>) reads ->
+    writeR st1 (<{ x:=a }>) writes ->
+    (forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
+    (forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
+Proof.
+    intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
+    inversion Hceval1. inversion Hceval2. subst.
+    destruct a.
+    (* x := n *)
+    - inversion Hreads. inversion H4. subst.
+        inversion Hwrites. unfold find_instance in *. subst.
+        clear H4. inversion H2. subst. inversion H7. subst.
+        intros. destruct l. apply LocSet_singleton_iff in H. rewrite H.
+        rewrite ?MemMap_find_1. 
+        easy.
+    (* x := l *)
+
+    
+    (* intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
+    inversion Hceval1. subst. inversion Hceval2. subst.
+    destruct a.
+    (* x := n *)
+    - inversion Hreads. inversion H5. subst.
+      inversion Hwrites. unfold find_instance in *. subst.
+      clear H5. inversion H2. subst. inversion H3. subst.
+        intros. apply FSetFact.singleton_iff in H. destruct H as [HL HR]. destruct l. simpl in *. subst.
+        rewrite ?MemMap_mem_add. easy.
+    (* x := l *)
+    - inversion Hreads. inversion H5. subst.
+      inversion Hwrites. unfold find_instance in *. subst.
+      clear H5. inversion H2. subst. inversion H3. subst.
+      specialize (Hsamereads l). clear H2 H3 Hceval1 Hceval2 Hwrites.
+      assert (HP: LocSet.In l (LocSet.singleton l)). { apply FSetFact.singleton_iff. easy. }
+      apply Hsamereads in HP.
+      assert (HV: v = v0). { 
+        apply
+        
+    }
+        subst.
+      intros. apply FSetFact.singleton_iff in H. destruct l0. simpl in *. destruct H. subst.
+        rewrite ?MemMap_mem_add. easy.
+       *)
+      
+
+        
+    
+      
+
+    
+    
+    

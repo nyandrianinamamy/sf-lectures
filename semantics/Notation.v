@@ -46,10 +46,10 @@ Notation "x := 'alloc' mu"  :=
          (CAlloc x mu)
             (in custom com at level 0, x constr at level 0,
              mu at level 85, no associativity) : com_scope.
-(* Notation "x ; y" :=
+Notation "x ; y" :=
          (CSeq x y)
            (in custom com at level 90, right associativity) : com_scope.
-Notation "'if' x 'then' y 'else' z 'end'" :=
+(* Notation "'if' x 'then' y 'else' z 'end'" :=
          (CIf x y z)
            (in custom com at level 89, x at level 99,
             y at level 99, z at level 99) : com_scope.

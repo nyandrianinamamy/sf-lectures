@@ -1,0 +1,37 @@
+
+
+(* Projection on locsets *)
+Definition proj (st: state) (locs: locset): state :=
+    MemMap.fold (
+        fun k v acc => 
+        if (LocSet.mem k locs) 
+        then MemMap.add k v acc 
+        else acc
+    ) st empty_state.
+        
+Inductive projR: state -> locset -> state -> Prop :=
+    | E_Proj_Empty: 
+        forall st, projR st LocSet.empty empty_state
+    | E_Proj_Add: 
+        forall st locs k v acc,
+        (LocSet.mem k locs) = true ->
+        (MemMap.mem k st) = true ->
+        projR st locs (MemMap.add k v acc)
+    | E_Proj_NoAdd: 
+        forall st locs k acc,
+        LocSet.mem k locs = false ->
+        projR st locs acc.
+
+
+Lemma proj_empty: 
+    forall st, 
+        projR st LocSet.empty empty_state.
+Proof.
+    intros. apply E_Proj_Empty.
+Qed.
+
+Lemma proj_singleton: forall st l v,
+    projR (l !-> v; st) (LocSet.singleton l) (l !-> v; empty_state).
+Proof.
+    intros *. apply E_Proj_Add. apply LocSet_mem_1. apply MemMap_mem_add.
+Qed.

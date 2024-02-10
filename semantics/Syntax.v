@@ -28,6 +28,7 @@ Import AExp.
 
 Inductive com : Type :=
     | CSkip
+    | CSeq (c1 c2: com)
     | CAsgn (x:string) (a: aexp)
     | CAlloc (x:string) (mu: string).
 
