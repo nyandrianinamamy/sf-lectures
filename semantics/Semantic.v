@@ -345,9 +345,6 @@ Proof.
         intros. destruct l. apply LocSet_singleton_iff in H. rewrite H.
         rewrite ?MemMap_find_1. 
         easy.
-    (* x := l *)
-
-    (* x := a + b*)
 Admitted.
 
 Lemma rw_allocR:
@@ -361,23 +358,15 @@ Lemma rw_allocR:
 Proof.
 Admitted.
 
-
-(* c1; c2 *)
-Lemma rw_seqR:
-    forall st1 st1' st2 st2' reads writes c1 c2,
-    st1 =[ <{ c1; c2 }> ]=> Some st1' ->
-    st2 =[ <{ c1; c2 }> ]=> Some st2' ->
-    readR st1 <{ c1; c2 }> reads ->
-    writeR st1 <{ c1; c2 }> writes ->
-    (forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
-    (forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
+Lemma empty_write:
+    forall c st st',
+    writeR st c LocSet.empty ->
+    cevalR c st (Some st') ->
+    st = st'.
 Proof.
-    intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
-    induction Hceval1; simpl in *.
-    - inversion Hwrites. subst. inversion Hreads. subst. intros. easy.
-    - inversion Hwrites. subst. inversion Hreads. subst. intros.   
 Admitted.
-
+            
+            
 
 Lemma rw_total:
     forall c (st2 st2' st1 st1': state) reads writes,
@@ -428,52 +417,20 @@ Proof.
         - apply H.
         }
 
-        assert (Hmid_not_touch: forall l, ~(LocSet.In l l3) -> MemMap.find l st1' = MemMap.find l st2').
+        assert (Hmid_not_touch: forall l, ~ (LocSet.In l l3) -> MemMap.find l st1' = MemMap.find l st2').
+             (* apply not_in_writes with (c:= <{ c1; c2}>) (writes:= l3). *)
+            (* -   *)
         admit.
 
         intros. 
         apply LocSet.union_1 in H. destruct H.
-          * specialize (Hmid_write_l0 l). 
-          assert (Excl: ~(LocSet.In l l3)). { admit. }
-            apply Hmid_not_touch. apply Excl.
-        * specialize (Hmid_write_l3 l). apply Hmid_write_l3. easy.
- 
-
-       
-        
-
-
-
-    (* intros c.
-    induction c; intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads; inversion Hceval1; inversion Hceval2; subst; auto.
-    (* Skip *)
-    - apply rw_skipR with (st1:=st1') (st1':=st1') (st2:=st2') (st2':=st2') (reads:=reads); auto.
-    (* Assignment *)
-    -  *)
-    
-    
-    (* Allocation *)
-    (* Seq *)
-
-
-
-(* intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
-(* x := l *)
-- inversion Hreads. inversion H5. subst.
-    inversion Hwrites. unfold find_instance in *. subst.
-    clear H5. inversion H2. subst. inversion H3. subst.
-    specialize (Hsamereads l). clear H2 H3 Hceval1 Hceval2 Hwrites.
-    assert (HP: LocSet.In l (LocSet.singleton l)). { apply FSetFact.singleton_iff. easy. }
-    apply Hsamereads in HP.
-    assert (HV: v = v0). { 
-    apply
-    
-}
-    subst.
-    intros. apply FSetFact.singleton_iff in H. destruct l0. simpl in *. destruct H. subst.
-    rewrite ?MemMap_mem_add. easy.
-    *)
-    
+          * specialize (Hmid_write_l0 l).
+            assert (Excl: ~(LocSet.In l l3)). { admit. }
+            specialize (Hmid_not_touch l).
+            apply Hmid_not_touch.
+            apply Excl.
+         * specialize (Hmid_write_l3 l). apply Hmid_write_l3. easy.
+Admitted.
 
         
     
