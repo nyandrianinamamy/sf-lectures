@@ -148,52 +148,124 @@ Inductive upsilonR: state -> aexp -> locset -> Prop :=
 Fixpoint write (st: state) (c: com) : locset :=
     match c with
     | <{ skip }> => LocSet.empty
-    | <{ c1 ; c2 }> => LocSet.union (write st c1) (write st c2)
+    | <{ c1 ; c2 }> => 
+        match ceval st c1 with
+        | Some st' => LocSet.union (write st c1) (write st' c2)
+        | None => LocSet.empty
+        end
     | <{ x := a }> => LocSet.singleton (find_instance st x) 
     | <{ x := alloc mu }> => LocSet.singleton (find_instance st x) 
     end.
          
-Inductive writeR: state -> com -> locset -> Prop :=
+(* Inductive writeR: state -> com -> locset -> Prop :=
     | E_Write_CSkip: 
         forall st,
         writeR st <{ skip }> LocSet.empty
     | E_Write_CSeq:
-        forall st c1 c2 l1 l2,
-        writeR st c1 l1 -> 
-        writeR st c2 l2 -> 
+        forall st st' c1 c2 l1 l2,
+        writeR st c1 l1 ->
+        st =[ c1 ]=> Some st' ->
+        writeR st' c2 (LocSet.union l1 l2) -> 
         writeR st <{ c1 ; c2 }> (LocSet.union l1 l2)
     | E_Write_CAsn:
         forall st x a,
         writeR st <{ x := a }> (LocSet.singleton (find_instance st x))
     | E_Write_CAlloc:
         forall st x mu,
-        writeR st <{ x := alloc mu }> (LocSet.singleton (find_instance st x)).
+        writeR st <{ x := alloc mu }> (LocSet.singleton (find_instance st x)). *)
 
 Fixpoint read (st: state) (c: com) : locset :=
     match c with
     | CSkip => LocSet.empty
-    | CSeq c1 c2 => LocSet.union (read st c1) (read st c2)
+    | CSeq c1 c2 =>
+        match ceval st c1 with
+        | Some st' => LocSet.union (read st c1) (read st' c2)
+        | None => LocSet.empty
+        end
     | CAsgn (x) (a) => upsilon st a 
     | CAlloc (x) (mu) => LocSet.empty
     end.
 
-Inductive readR: state -> com -> locset -> Prop :=
-    | E_Read_CSkip: 
+(* Inductive readR: state -> com -> locset -> Prop :=
+    | E_Read_CSkip:
         forall st,
-        readR st CSkip LocSet.empty
-    | E_Read_CSeq:
-        forall st c1 c2 l1 l2,
-        readR st c1 l1 -> 
-        readR st c2 l2 -> 
-        readR st <{ c1 ; c2 }> (LocSet.union l1 l2)
-    | E_Read_CAsn:
-        forall st x a l,
+        readR st CSkip (LocSet.empty)
+    | E_Read_CAsgn:
+        forall st st' x a l,
         upsilonR st a l ->
         readR st <{ x := a }> l
-    | E_Read_CAlloc:
-        forall st x mu,
-        readR st <{ x := alloc mu }> LocSet.empty.
+    | E_Read_CSeq st st' st'' c1 c2 l l' l'':
+        readR st c1 l1 ->
+        ceval st c1 = Some st' ->
+        readR st' c2 l2 ->
+        let lu := LocSet.union(l1 l2) in
+        readR st <{ c1 ; c2 }> .
 
+Inductive writeR: state -> locset -> com -> state -> locset -> Prop :=
+    | E_Write_CSkip st l:
+        writeR st l CSkip st l
+    | E_Write_CAsgn st st' l x a:
+        st =[ x := a ]=> (Some st') -> 
+        writeR st l <{ x := a }> st' (LocSet.add (find_instance st x) l) 
+    | E_Write_CSeq st st' st'' c1 c2 l l' l'':
+        writeR st l c1 st' l' ->
+        writeR st' l' c2 st'' l'' ->
+        writeR st l <{ c1 ; c2 }> st'' l''. *)
+
+
+Inductive RW: state -> com -> locset -> locset -> Prop :=
+    | E_RW_CSkip:
+        forall st,
+        RW st CSkip (LocSet.empty) (LocSet.empty)
+    | E_RW_CAsgn:
+        forall st x a l,
+        upsilonR st a l ->
+        RW st <{ x := a }> l (LocSet.singleton (find_instance st x))
+    | E_RW_CSeq st st' st'' c1 c2 r r1 r2 diff_r2_w1 w1 w2:
+        RW st c1 r1 w1 ->
+        cevalR c1 st (Some st') ->
+        RW st' c2 r2 w2 ->
+        cevalR c2 st' (Some st'') ->
+        LocSet.Equal (LocSet.diff r2 w1) diff_r2_w1 ->
+        LocSet.Equal (LocSet.union r1 diff_r2_w1) r ->
+        RW st <{ c1 ; c2 }> r w2.
+        
+
+Definition init_state := (W, 0) !-> VInt 10; _ !-> value.
+Definition end_state := (W, 0) !-> VInt 10; (W, 0) !-> VInt 10; _ !-> value.
+Definition empty_set := LocSet.empty.
+Example test_readR_skip: 
+    forall st, 
+    RW st <{ skip }> empty_set empty_set.
+Proof.
+    intros *.
+    apply E_RW_CSkip.
+Admitted.
+
+
+Example test_readR_seq_skip: 
+    forall st,
+    RW st <{ skip ; skip }> empty_set empty_set.
+Proof.
+    intros *.
+    apply E_RW_CSeq with (st:=st) (st':=st) (st'':=st) (r1:=empty_set) (r2:=empty_set) 
+    (diff_r2_w1:=empty_set) (w1:=empty_set) (w2:=empty_set); 
+    try easy; 
+    try apply E_RW_CSkip; 
+    try apply E_Skip.
+Admitted.
+
+Definition ten: Z := 10.
+
+Example test_readR_seq_asgn: 
+    forall st st' x y,
+    RW st <{ x := ANum ten }> empty_set (LocSet.singleton (X, 0)) ->
+    RW st' <{ y := AId (X,0) }> (LocSet.singleton (X, 0)) (LocSet.singleton (Y, 0)) ->
+    RW st <{ x := ANum ten ; y := AId (X,0) }> empty_set (LocSet.singleton(Y, 0)).
+Proof.
+    intros * Heval1 Heval2.
+    eapply E_RW_CSeq.
+Admitted.
 
 Lemma LocSet_mem_1 : 
     forall l,
@@ -211,100 +283,7 @@ Proof.
     rewrite FMapFact.add_eq_o. easy. destruct k. easy.
 Qed.
 
-(* Computational rw *)
-(* For reuse *)
-Definition rw_template (c: com) (st1 st1' st2 st2': state) : Prop :=
-    ceval st1 c = Some st1' ->
-    ceval st2 c = Some st2' ->
-    LocSet.For_all (fun l => MemMap.mem l st1 = MemMap.mem l st2) (read st1 c) ->
-    LocSet.For_all (fun l => MemMap.mem l st1' = MemMap.mem l st2') (write st1 c).
-
-(* skip *)
-Lemma rw_skip:
-    forall st1 st1' st2 st2',
-    rw_template CSkip st1 st1' st2 st2'.
-Proof.
-    intros * Hc Hceval1 Hceval2 Hreads. subst.
-    unfold LocSet.For_all. intros. easy.
-Qed.
-
-(* x := n *)
-Lemma rw_asgn_int:
-    forall c n x  a st1 st1' st2 st2',
-    c = (CAsgn x a) ->
-    a = ANum n ->
-    rw_template c st1 st1' st2 st2'.
-
-Proof.
-    intros * Hc Ha Hceval1 Hceval2 Hreads. 
-    subst. unfold ceval in *. unfold aeval in *. unfold read in *. unfold upsilon in *. unfold write in *. unfold find_instance in *.
-    injection Hceval1 as Hceval1. injection Hceval2 as Hceval2.
-    subst.  
-    unfold LocSet.For_all in *. intros.
-    unfold find_instance in *. apply FSetFact.singleton_iff in H. destruct x0. simpl in *. destruct H. subst.
-    rewrite ?MemMap_mem_add. easy.
-Qed.
-
-(* x := l *)
-Lemma rw_asgn_loc:
-    forall c x a l v st1 st1' st2 st2',
-    c = (CAsgn x a) ->
-    a = AId l ->
-    MemMap.find l st1 = Some v ->
-    MemMap.find l st2 = Some v ->
-    rw_template c st1 st1' st2 st2'.
-Proof.
-    intros * Hc Ha Hst1 Hst2 Hceval1 Hceval2 Hreads. 
-    subst. unfold ceval in *. unfold aeval in *. unfold read in *. unfold upsilon in *. unfold write in *. unfold find_instance in *.
-    rewrite Hst1 in *. rewrite Hst2 in *.
-    injection Hceval1 as Hceval1. injection Hceval2 as Hceval2.
-    subst.
-    unfold LocSet.For_all in *. intros. 
-    apply FSetFact.singleton_iff in H. destruct x0. simpl in *. destruct H. subst.
-    rewrite ?MemMap_mem_add. easy.
-Qed. 
-
-(* c1; c2 *)
-Lemma rw_seq_skip_skip:
-    forall c1 c2 st1 st1' st2 st2',
-    c1 = CSkip ->
-    c2 = CSkip ->
-    rw_template (CSeq c1 c2) st1 st1' st2 st2'.
-Proof.
-    intros * Hc1 Hc2 Hceval1 Hceval2 Hreads. subst. easy.
-Qed.
-
-Lemma rw_seq_skip_c2:
-    forall c1 c2 st1 st1' st2 st2',
-    c1 = CSkip ->
-    rw_template (CSeq c1 c2) st1 st1' st2 st2'.
-Proof.
-    intros * Hc1 Hceval1 Hceval2 Hreads. subst. simpl in *.
-Abort.
-(* End computational rw *)
-
 (* Relational RW *)
-
-Print FSetFact. 
-
-
-Lemma rw_skipR:
-    forall st1 st1' st2 st2' reads writes,
-    st1 =[ CSkip ]=> Some st1' ->
-    st2 =[ CSkip ]=> Some st2' ->
-    readR st1 CSkip reads ->
-    writeR st1 CSkip writes ->
-    (forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
-    (forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
-Proof.
-    intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
-    inversion Hceval1. inversion Hceval2. subst.
-    inversion Hreads. inversion Hwrites. subst.
-    intros.
-    specialize (Hsamereads l H). 
-    apply Hsamereads.
-Qed.
-
 
 Lemma MemMap_find_1:
     forall (k: MemMap.key) (v: value) (m: MemMap.t value),
@@ -325,117 +304,52 @@ Proof.
     subst; easy.
 Qed.
 
-(* x := n *)
-Lemma rw_asgnR:
-    forall st1 st1' st2 st2' reads writes x a,
-    st1 =[ <{ x:=a }> ]=> Some st1' ->
-    st2 =[ <{ x:=a }> ]=> Some st2' ->
-    readR st1 (<{ x:=a }>) reads ->
-    writeR st1 (<{ x:=a }>) writes ->
-    (forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
-    (forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
-Proof.
-    intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
-    inversion Hceval1. inversion Hceval2. subst.
-    destruct a.
-    (* x := n *)
-    - inversion Hreads. inversion H4. subst.
-        inversion Hwrites. unfold find_instance in *. subst.
-        clear H4. inversion H2. subst. inversion H7. subst.
-        intros. destruct l. apply LocSet_singleton_iff in H. rewrite H.
-        rewrite ?MemMap_find_1. 
-        easy.
-Admitted.
-
-Lemma rw_allocR:
-    forall st1 st1' st2 st2' reads writes x mu,
-    st1 =[ <{ x:= alloc mu }> ]=> Some st1' ->
-    st2 =[ <{ x:= alloc mu }> ]=> Some st2' ->
-    readR st1 (<{ x:= alloc mu }>) reads ->
-    writeR st1 (<{ x:= alloc mu }>) writes ->
-    (forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
-    (forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
+Lemma cevalR_det: forall c st1 st2 st,
+    st =[ <{ c }> ]=> Some st1 ->
+    st =[ <{ c }> ]=> Some st2 ->
+    st1 = st2.
 Proof.
 Admitted.
 
-Lemma empty_write:
-    forall c st st',
-    writeR st c LocSet.empty ->
-    cevalR c st (Some st') ->
-    st = st'.
-Proof.
-Admitted.
-            
-            
-
-Lemma rw_total:
-    forall c (st2 st2' st1 st1': state) reads writes,
-    st1 =[ <{ c }> ]=> Some st1' ->
-    st2 =[ <{ c }> ]=> Some st2' ->
-    readR st1 <{ c }> reads ->
-    writeR st1 <{ c }> writes ->
-    (forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
-    (forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
+Theorem rw_eval:
+forall c st1 st1' st2 st2' reads writes,
+RW st1 c reads writes ->
+cevalR c st1 (Some st1') ->
+cevalR c st2 (Some st2') ->
+(forall l, LocSet.In l reads -> MemMap.find l st1 = MemMap.find l st2) ->
+(forall l, LocSet.In l writes -> MemMap.find l st1' = MemMap.find l st2').
 Proof.
     intros c.
-    induction c; intros * Hceval1 Hceval2 Hreads Hwrites Hsamereads.
+    induction c; intros * Hrw Hceval1 Hceval2;  try easy.
+    - inversion Hceval1. inversion Hceval2. inversion Hrw. subst.
+      intros Hsamereads. intros l. easy.
+    - inversion Hceval1. inversion Hceval2. inversion Hrw. subst.
+      intros Hsamereads.
 
-    (* Skip *)
-    - apply rw_skipR with (st1:=st1') (st1':=st1') (st2:=st2') (st2':=st2') (reads:=reads).
-        * apply E_Skip.
-        * apply E_Skip.
-        * inversion Hreads. apply E_Read_CSkip.
-        * inversion Hwrites. apply E_Write_CSkip.
-        * inversion Hreads. subst. easy.
+      assert (Hst1: st' = st'1). apply cevalR_det with (c:=c1) (st:=st1) (st1:=st') (st2:=st'1); easy. subst. clear H14.
+      assert (Hst1: st1' = st''1). apply cevalR_det with (c:=c2) (st:=st'1) (st1:=st1') (st2:=st''1); easy. subst. clear H16.
 
-    (* Sequence *)
-    - inversion Hceval1. inversion Hceval2. subst. inversion Hreads. inversion Hwrites. subst.
 
-        assert (Hmid_write_l0: forall l, LocSet.In l l0 -> MemMap.find l st' = MemMap.find l st'0).
-        {intros. apply IHc1 with (st1:=st1) (st1':=st') (st2:=st2) (st2':=st'0) (reads:=l1) (writes:=l0).
-            - apply H1.
-            - apply H7.
-            - apply H3.
-            - apply H12.
-            - intros. specialize (Hsamereads l4). apply Hsamereads. apply LocSet.union_2. easy.
-            - apply H.
-        }
+      (* specialize (IHc1 st1 st'1 st2 st'0 r1).
+      specialize (IHc2 st'1 st''1 st'0 st2'). *)
 
-        assert (Hmid_read_l2: forall l, LocSet.In l l2 -> MemMap.find l st' = MemMap.find l st'0).
-        admit.
+      (* apply IHc2 with(reads:=r2); try easy.
+      apply IHc1 with(writes:=r2); try easy.
+      * admit.
+      * assert (Hr1: LocSet.Subset r1 reads). admit. (* Follows from H21*)
+        intros l Hl. apply Hsamereads. apply Hr1. easy. *)
 
-        assert (Hmid_read_l1: forall l, LocSet.In l l1 -> MemMap.find l st1 = MemMap.find l st2).
-        admit.
-        
-        assert (Hmid_write_l3: forall l, LocSet.In l l3 -> MemMap.find l st1' = MemMap.find l st2').
-        {intros. apply IHc2 with (st1:=st') (st1':=st1') (st2:=st'0) (st2':=st2') (reads:=l2) (writes:=l3).
-        - apply H4.
-        - apply H10.
-        - assert (readR st' c2 l2 = readR st1 c2 l2). admit. rewrite H0. apply H6.
-        - assert (writeR st' c2 l3 = writeR st1 c2 l3). admit. rewrite H0. apply H14.
-        - intros. specialize (Hmid_read_l2 l4). apply Hmid_read_l2. apply H0.
-        - apply H.
-        }
+      (* apply IHc2; try easy. *)
 
-        assert (Hmid_not_touch: forall l, ~ (LocSet.In l l3) -> MemMap.find l st1' = MemMap.find l st2').
-             (* apply not_in_writes with (c:= <{ c1; c2}>) (writes:= l3). *)
-            (* -   *)
-        admit.
-
-        intros. 
-        apply LocSet.union_1 in H. destruct H.
-          * specialize (Hmid_write_l0 l).
-            assert (Excl: ~(LocSet.In l l3)). { admit. }
-            specialize (Hmid_not_touch l).
-            apply Hmid_not_touch.
-            apply Excl.
-         * specialize (Hmid_write_l3 l). apply Hmid_write_l3. easy.
+      (* apply IHc2; try easy. assert (Hr2: r2 = diff_r2_w1). {
+         
+       } 
+    rewrite Hr2 in H15. apply H15. *)
+      
+    (* induction Hrw; try easy.
+    - inversion Hceval1. inversion Hceval2. subst. unfold find_instance in *.
+      intros Hsamereads. inversion H. subst; try easy.
+        * inversion H8. subst. inversion H3. subst. *)
 Admitted.
 
-        
-    
-      
 
-    
-    
-    

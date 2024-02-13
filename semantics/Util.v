@@ -5,11 +5,13 @@ Require Import SEM.State.
 
 Require Import Coq.FSets.FMapFacts.
 Require Import Coq.FSets.FSetFacts.
+Require Import Coq.FSets.FSetDecide.
 
 (* Proof helper for Sets and Maps *)
 Module Import P := WProperties_fun Loc_as_OT MemMap.
 Module Import FMapFact := P.F.
 Module Import FSetFact := WFacts_fun Loc_as_OT LocSet.
+(* Values *)
 
 
 (* Useful variables *)
