@@ -312,16 +312,22 @@ Lemma cevalR_det: forall c st1 st2 st,
 Proof.
 Admitted.
 
-
 Definition find (v:MemMap.key) (st:MemMap.t value) := MemMap.find v st.
 
 Lemma LocSet_neg_union_1:
     forall w W1 W2,
-    ~LocSet.In w W1 /\ ~LocSet.In w W2 <-> ~ LocSet.In w (LocSet.union W1 W2).
+    LocSet.mem w W1 = false /\ LocSet.mem w W2 = false <-> (LocSet.mem w (LocSet.union W1 W2) = false).
 Proof.
-Admitted.
+    intros *.
+    rewrite FSetFact.union_b.
+    split; try auto.
+    - intros [H1 H2].
+        rewrite H1. rewrite H2. easy.
+    - intros H.
+        destruct (LocSet.mem w W1) eqn: H1; destruct (LocSet.mem w W2) eqn: H2; try easy.
+Qed.
 
-
+(* 
 Lemma no_change_outside_W:
     forall c (I O: state) (W: locset),
     writeR I c O W ->
@@ -357,17 +363,10 @@ Proof.
         inversion H4.
         unfold find_instance in *. subst.
         unfold find in *.
-Admitted.
+Admitted. *)
 
-Lemma intersection_agreement:
-    forall R2 W1 M1 M2,
-    forall r, LocSet.In r (LocSet.inter R2 W1) -> find r M1 = find r M2.
-Proof.
-Admitted.
 
-Search "dec_In".
-
-Lemma difference_agreement:
+Lemma May_S_uses_only_R:
     forall c R W I1 I2 O1 O2,
     I2 =[ c ]=> (Some O2) ->
     readR I1 c O1 R ->
@@ -405,10 +404,27 @@ Proof.
                 apply transitivity with (x:=find r M1) (y:=find r I2) (z:=find r M2); try easy.            
         }
 
-        
+        assert (H_W2_not_W2: forall w, (LocSet.In w W2 -> find w O1 = find w O2) /\ (LocSet.mem w W2 = false -> find w O1 = find w M1 /\ find w O2 = find w M2)).
+        {
+            apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy.
+        }
 
-        
-        
+        intros w.
+
+        split.
+
+        2: {
+            intros H_not_in_W1_W2.
+            rewrite <- LocSet_neg_union_1 in H_not_in_W1_W2.
+            destruct H_not_in_W1_W2 as [H_not_in_W1 H_not_in_W2].
+            destruct H_W1_not_W1 with (w:=w) as [H_W1 H_not_W1].
+            apply H_not_W1 in H_not_in_W1.
+            destruct H_W2_not_W2 with (w:=w) as [H_W2 H_not_W2].
+            apply H_not_W2 in H_not_in_W2.
+            destruct H_not_in_W1. destruct H_not_in_W2.
+            rewrite H1 in H5. rewrite H2 in H7.
+            split; try easy.
+        }      
 
 Admitted.
 
