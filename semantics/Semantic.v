@@ -424,7 +424,26 @@ Proof.
             destruct H_not_in_W1. destruct H_not_in_W2.
             rewrite H1 in H5. rewrite H2 in H7.
             split; try easy.
-        }      
+        }
+
+        intros H_in_W1_W2.
+
+        rewrite FSetFact.union_iff in H_in_W1_W2.
+
+        destruct H_in_W1_W2 as [H_in_W1 | H_in_W2].
+
+        -- destruct (LocSet.mem w W2) eqn: H_mem.
+            ++ apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy. rewrite <- FSetFact.mem_iff in H_mem. easy.
+            ++ destruct H_W1_not_W1 with (w:=w) as [H_W1 H_not_W1].
+               destruct H_W2_not_W2 with (w:=w) as [H_W2 H_not_W2]. 
+                apply H_W1 in H_in_W1. apply H_not_W2 in H_mem.
+                destruct H_mem. rewrite H1. rewrite H2. easy.
+        
+        -- destruct (LocSet.mem w W1) eqn: H_mem ; 
+            destruct H_W2_not_W2 with (w:=w) as [H_W2 H_not_W2];
+            apply H_W2 in H_in_W2; easy.
+
+
 
 Admitted.
 
