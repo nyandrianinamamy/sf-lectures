@@ -17,7 +17,7 @@ Import BExp.
 Import Com.
 
 
-Fixpoint aeval (st: state) (a: aexp): option value :=
+(* Fixpoint aeval (st: state) (a: aexp): option value :=
     match a with
     | ANum n => Some (VInt n)
     | AId x => match (MemMap.find x st) with
@@ -28,7 +28,7 @@ Fixpoint aeval (st: state) (a: aexp): option value :=
                     | (Some (VInt n1), Some (VInt n2)) => Some (VInt (n1 + n2))
                     | _ => None
                     end 
-    end.
+    end. *)
 
 Reserved Notation
          "st '={' a '}=>' value"
@@ -38,23 +38,31 @@ Reserved Notation
 Inductive aevalR: state -> aexp -> option value -> Prop :=
     | E_ANum (n: Z): 
         forall st, st ={ n }=> (Some (VInt n))
-    | E_AId_Def (l: loc) (v: value):
-        forall st, MemMap.find l st = Some v -> st ={ AId l }=> (Some v)
-    | E_AId_Undef (l: loc):
-        forall st, MemMap.find l st = None -> st ={ AId l }=> None
+    | E_AAddr_Def (x: string) (v: value):
+        forall st l, 
+        find_instance st x = l ->   
+        st ={ AAddr x }=> Some (VPtr l)
+    | E_AId_Def (x: string) (v: value):
+        forall st l, 
+        find_instance st x = l ->   
+        MemMap.find l st = Some v -> 
+        st ={ AId x }=> (Some v)
     | E_APlus_Num (a1 a2: aexp) (n1 n2: Z):
         forall st, 
         st ={ a1 }=> (Some (VInt n1)) -> 
         st ={ a2 }=> (Some (VInt n2)) -> 
         st ={ <{ a1 + a2 }> }=> Some (VInt (n1 + n2))
-    | E_APlus_Undef (a1 a2: aexp):
+    | E_APlus_Undef_Left (a1 a2: aexp):
         forall st, 
-        st ={ a1 }=> None -> 
+        st ={ a1 }=> None ->
+        st ={ <{ a1 + a2 }> }=> None
+    | E_APlus_Undef_Right (a1 a2: aexp):
+        forall st,
         st ={ a2 }=> None -> 
         st ={ <{ a1 + a2 }> }=> None
 where "state '={' aexp '}=>' value" := (aevalR state aexp value) : type_scope.
 
-Fixpoint beval (st: state) (b: bexp): bool :=
+(* Fixpoint beval (st: state) (b: bexp): bool :=
     match b with
     | <{true}> => true
     | <{false}> => false
@@ -67,10 +75,10 @@ Fixpoint beval (st: state) (b: bexp): bool :=
                     | _ => false
                 end
     | <{~b1}> => negb (beval st b1)
-    end. 
+    end.  *)
 
 (* We chose None to differentiate normal termination and out of gas (when adding loops later) *)
-Fixpoint ceval (st: state) (c: com): option state :=
+(* Fixpoint ceval (st: state) (c: com): option state :=
     match c with 
     | CSkip => Some st
     | CSeq c1 c2 => match ceval st c1 with
@@ -82,13 +90,13 @@ Fixpoint ceval (st: state) (c: com): option state :=
                         | None => None
                     end
     (* TODO: 0 as default value ? *)
-    | CAlloc x mu =>let l := fresh st mu in
+    | CAlloc x mu => let l := fresh st mu in
                         match l with
                             | Some mu_ptr => 
                                 Some (find_instance st x !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
                             | None => None
                         end
-    end.
+    end. *)
 
 Reserved Notation
          "st '=[' c ']=>' st'"
@@ -104,22 +112,20 @@ Inductive cevalR: com -> state -> option state -> Prop :=
         st' =[ c2 ]=> st'' ->
         st =[ CSeq c1 c2 ]=> st''
     | E_Asgn: 
-        forall (st:state) x aexp v,
+        forall (st:state) x l aexp v,
+        st ={ AAddr x }=> Some (VPtr l) ->
         st ={ aexp }=> Some v ->
-        st =[ CAsgn x aexp ]=> Some (find_instance st x !-> v; st)
-    (* | E_Asgn_Ptr: 
-        forall st x aexp loc,
-        st ={ aexp }=> Some (VPtr loc) ->
-        st =[ CAsgn x aexp ]=> Some (find_instance st x !-> (VPtr loc); st) *)
+        st =[ CAsgn x aexp ]=> Some (l !-> v; st)
     | E_Asgn_Undef: 
         forall st x aexp,
         st ={ aexp }=> None ->
         st =[ CAsgn x aexp ]=> None
         (* TODO: 0 as default value ? *)
     | E_Alloc_Success: 
-        forall st x mu mu_ptr,
+        forall st x l mu mu_ptr,
         fresh_spec st mu (Some mu_ptr) ->
-        st =[ CAlloc x mu ]=> Some (find_instance st x !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
+        st ={ AAddr x }=> Some (VPtr l) ->
+        st =[ CAlloc x mu ]=> Some (l !-> (VPtr mu_ptr); mu_ptr !-> def_init; st)
     | E_Alloc_Fail:
         forall st x mu,
         fresh_spec st mu None ->
@@ -128,24 +134,29 @@ where "st '=[' c ']=>' st'" := (cevalR c st st') : type_scope.
 
 
 (* Read and Written memory locations *)
-Fixpoint upsilon (st: state) (a: aexp): locset :=
+(* Fixpoint upsilon (st: state) (a: aexp): locset :=
     match a with
     | ANum n => LocSet.empty
     | AId l => LocSet.singleton (l)
     | <{ a1 + a2 }> => LocSet.union (upsilon st a1) (upsilon st a2)
-    end.
+    end. *)
 
 Inductive upsilonR: state -> aexp -> locset -> Prop :=
     | E_Ups_Num: 
         forall st n, upsilonR st (ANum n) LocSet.empty
+    | E_Ups_Addr:
+        forall st x,
+        upsilonR st (AAddr x) LocSet.empty
     | E_Ups_Id: 
-        forall st l, upsilonR st (AId l) (LocSet.singleton l)
+        forall st x l, 
+        st ={ AAddr x }=> Some (VPtr l) ->
+        upsilonR st (AId x) (LocSet.singleton l)
     | E_Ups_Plus: 
         forall st a1 a2 l1 l2,
         upsilonR st a1 l1 -> upsilonR st a2 l2 -> upsilonR st <{ a1 + a2 }> (LocSet.union l1 l2).
 
 (* TODO: Fail if CAlloc because unsound ? *)
-Fixpoint write (st: state) (c: com) : locset :=
+(* Fixpoint write (st: state) (c: com) : locset :=
     match c with
     | <{ skip }> => LocSet.empty
     | <{ c1 ; c2 }> => 
@@ -156,7 +167,7 @@ Fixpoint write (st: state) (c: com) : locset :=
     | <{ x := a }> => LocSet.singleton (find_instance st x) 
     | <{ x := alloc mu }> => LocSet.singleton (find_instance st x) 
     end.
-         
+          *)
 (* Inductive writeR: state -> com -> locset -> Prop :=
     | E_Write_CSkip: 
         forall st,
@@ -174,7 +185,7 @@ Fixpoint write (st: state) (c: com) : locset :=
         forall st x mu,
         writeR st <{ x := alloc mu }> (LocSet.singleton (find_instance st x)). *)
 
-Fixpoint read (st: state) (c: com) : locset :=
+(* Fixpoint read (st: state) (c: com) : locset :=
     match c with
     | CSkip => LocSet.empty
     | CSeq c1 c2 =>
@@ -184,7 +195,7 @@ Fixpoint read (st: state) (c: com) : locset :=
         end
     | CAsgn (x) (a) => upsilon st a 
     | CAlloc (x) (mu) => LocSet.empty
-    end.
+    end. *)
 
 Inductive readR: state -> com -> state -> locset -> Prop :=
     | E_Read_CSkip:
@@ -195,7 +206,7 @@ Inductive readR: state -> com -> state -> locset -> Prop :=
         forall st st' x a l,
         st =[ x := a ]=> (Some st') ->
         upsilonR st a l ->
-        readR st <{ x := a }> st' (LocSet.add (find_instance st x) l) 
+        readR st <{ x := a }> st' l 
     | E_Read_CSeq I1 M1 O1 c1 c2 R1 R2:
         I1 =[ c1 ]=> (Some M1) ->
         readR I1 c1 M1 R1 ->
@@ -327,46 +338,25 @@ Proof.
         destruct (LocSet.mem w W1) eqn: H1; destruct (LocSet.mem w W2) eqn: H2; try easy.
 Qed.
 
-(* 
-Lemma no_change_outside_W:
-    forall c (I O: state) (W: locset),
-    writeR I c O W ->
-    (forall w, ~LocSet.In w W -> find w O = find w I).
+
+(* Proof by uniqueness of k ?  *)
+Lemma MemMap_not_find:
+    forall k l v (m: MemMap.t value),
+    LocSet.mem k (LocSet.singleton l) = false -> MemMap.find k (l !-> v; m) = MemMap.find k m.
 Proof.
-    intros c.
-    induction c.
-    (* Skip *)
-    - intros * Hwrite. inversion Hwrite. subst. 
-        intros w H_not_in_W.
-        inversion H. subst. easy.
-    (* Seq *)
-    - intros * Hwrite. inversion Hwrite. subst.
-        intros w H_not_in_W.
-        specialize IHc1 with (I:=I) (O:=M1) (W:=W1) as IHc1'.
-        specialize IHc2 with (I:=M1) (O:=O) (W:=W2) as IHc2'.
-
-        rewrite <- LocSet_neg_union_1 in H_not_in_W.
-        destruct H_not_in_W as [H_not_in_W1 H_not_in_W2].
-
-        assert (H_mid_1: find w M1 = find w I). {
-            apply IHc1' with (w:=w); try easy.
-        }
-
-        assert (H_mid_2: find w O = find w M1). {
-            apply IHc2' with (w:=w); try easy.
-        }
-
-        apply transitivity with (x:=find w O) (y:=find w M1) (z:=find w I); try easy.
-
-    - intros * Hwrite. inversion Hwrite. subst.
-        intros w H_not_in_W.
-        inversion H4.
-        unfold find_instance in *. subst.
-        unfold find in *.
-Admitted. *)
+Admitted.
 
 
-Lemma May_S_uses_only_R:
+Lemma LocSet_union_1:
+    forall l1 l2 l3,
+    LocSet.In l1 l2 -> LocSet.In l1 (LocSet.union l2 l3).
+Proof.
+    intros * H_in_l1.
+    apply FSetFact.union_iff. left. easy.
+Qed.
+
+
+Lemma S_uses_only_R:
     forall c R W I1 I2 O1 O2,
     I2 =[ c ]=> (Some O2) ->
     readR I1 c O1 R ->
@@ -376,8 +366,16 @@ Lemma May_S_uses_only_R:
 Proof.
     intros c.
     induction c.
-    - admit.
+    (* Skip *)
+    - intros * Hceval Hread Hwrite H_same_reads.
+        inversion Hceval. subst.
+        inversion Hread. subst.
+        inversion Hwrite. subst.
+        intros w. split.
+        + easy.
+        + intros H_not_in_W. inversion H. subst. easy.
 
+    (* Seq *)
     - intros * Hceval Hread Hwrite H_same_reads.
         inversion Hceval as [|? M2|?|?|?|?]. subst.
         inversion Hread. inversion Hwrite. subst.
@@ -444,349 +442,30 @@ Proof.
             apply H_W2 in H_in_W2; easy.
 
 
+    (* Asgn *)
+    - intros * Hceval Hread Hwrite H_same_reads.
+        induction a as [n | y | ? | y mu].
+        + inversion Hceval. inversion Hread. inversion Hwrite. subst.  clear H17.
+          inversion H11. subst. unfold find_instance in *.
+          inversion H8. subst. inversion H3. subst. unfold find_instance in *.
+          inversion H5. subst. unfold find_instance in *.
+          inversion H6. subst. inversion H4. subst.
+
+          intros w. split.
+          * intros H_in_W. apply LocSet_singleton_iff in H_in_W. subst.
+            rewrite MemMap_find_1. rewrite MemMap_find_1. easy.
+          * intros H_not_in_W. unfold find. split.
+            -- apply MemMap_not_find with (k:=w) (l:=(x,0)) (v:=VInt n) (m:=I1). easy.
+            -- apply MemMap_not_find with (k:=w) (l:=(x,0)) (v:=VInt n) (m:=I2). easy. 
+        + inversion Hceval. inversion Hread. inversion Hwrite. subst.  clear H17.
+          inversion H11. subst. unfold find_instance in *.
+          inversion H8. subst. inversion H3. subst. unfold find_instance in *.
+          inversion H4. subst. inversion H7. subst. unfold find_instance in *.
+          inversion H6. subst. unfold find_instance in *.
+          inversion H1. subst. unfold find_instance in *.
+
+          specialize (H_same_reads (y,0)).
+          intros w. split.
+            * intros H_in_W.
 
 Admitted.
-
-
-Lemma LocSet_union_1:
-    forall l1 l2 l3,
-    LocSet.In l1 l2 -> LocSet.In l1 (LocSet.union l2 l3).
-Proof.
-    intros * H_in_l1.
-    apply FSetFact.union_iff. left. easy.
-Qed.
-
-
-Lemma LocSet_union_non_disjoint:
-    forall l1 l2 l3,
-    LocSet.In l1 (LocSet.union l2 l3) <-> 
-    ((LocSet.In l1 l2 /\ LocSet.In l1 l3) \/
-    (LocSet.In l1 l2 /\ ~LocSet.In l1 l3) \/
-    (~LocSet.In l1 l2 /\ LocSet.In l1 l3)).
-Proof.
-Admitted.
-
-
-(* Lemma S_uses_only_R:
-    forall c (I1 O1 I2 O2: state) (R W: locset),
-    I2 =[ c ]=> (Some O2) ->
-    readR I1 c O1 R ->
-    writeR I1 c O1 W ->
-    (forall r, LocSet.In r R -> find r I1 = find r I2) ->
-    (forall w, (LocSet.In w W -> find w O1 = find w O2) /\ (~LocSet.In w W -> find w O1 = find w I1 /\ find w O2 = find w I2)).
-Proof.
-    intros c.
-    induction c.
-    (* Skip *)
-    -  intros * Hceval Hread Hwrite H_same_reads.
-        inversion Hceval. inversion Hread. inversion Hwrite. subst.
-        intros w.
-        split.
-        * intros H_in_w. easy.
-        * intros H_not_in_w. split; try easy. apply no_change_outside_W with (c:=<{ skip }>) (W:= LocSet.empty); try easy.
-
-
-    (* Seq *)
-    - intros * Hceval Hread Hwrite.
-        inversion Hceval as [|? M2|?|?|?|?]. subst.
-        inversion Hread. inversion Hwrite. subst.
-        assert (HM1: M0 = M1). admit. subst. clear H12. clear H15.
-
-        intros H_same_reads.
-
-        intros.
-
-        apply (IHc1 I1 M1 I2 M2 R1 W1) with (w:=w) in H; try easy.
-
-        apply (IHc2 M1 O1 M2 O2 R2 W2) with (w:=w) in H0; try easy.
-        apply (IHc2 M1 O1 M2 O2 R2 W2) with (w:=w) in H6; try easy.
-
-        2: {
-            assert (H_R2: forall r, LocSet.In r R2 -> find r I1 = find r I2). admit.
-            assert (H_R2_W1: forall r, LocSet.In r R2 -> LocSet.In r W1 -> find r M1 = find r M2). admit.
-            assert (H_R2_not_W1: forall r, LocSet.In r R2 -> ~LocSet.In r W1 -> find r M1 = find r M2). admit.
-
-            intros r.
-            intros H_in_R2.
-            apply H_R2_W1.
-        } *)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        (* assert (H_MID: forall r, LocSet.In r R2 -> find r M1 = find r M2). {
-            
-        } *)
-        (* Do not depend on r2 M2 *)
-        (* assert (H_W_M1_M2: forall w, LocSet.In w W1 -> find w M1 = find w M2). {
-            intros * H_in_W1.
-            apply IHc1 with (I1:=I1) (O1:=M1) (I2:=I2) (O2:=M2) (R:=R1) (W:=W1); try easy.
-            intros r. specialize (H_same_reads r). intros H_in_R1. apply H_same_reads. rewrite FSetFact.union_iff. left. easy.
-        } *)
-
-        (* assert (H_not_W_M1_M2: forall w, ~LocSet.In w W1 -> find w M1 = find w I1 /\ find w M2 = find w I2). {
-            intros * H_not_in_W1.
-            apply IHc1 with (I1:=I1) (O1:=M1) (I2:=I2) (O2:=M2) (R:=R1) (W:=W1); try easy.
-            intros r. specialize (H_same_reads r). intros H_in_R1. apply H_same_reads. rewrite FSetFact.union_iff. left. easy.
-        } *)
-
-        (* Do not depend on r2 M2 *)
-        (* assert (H_W1_not_W2_M1_M2: forall w, LocSet.In w W1 /\ ~ LocSet.In w W2 -> find w M1 = find w M2). {
-            intros.
-            apply H_W_M1_M2. easy.
-        } *)
-
-        (* specialize IHc1 with (I1:=I1) (O1:=M1) (I2:=I2) (O2:=M2) (R:=R1) (W:=W1) as IHc1'.
-    
-        specialize IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2) as IHc2'. *)
-
-        (* I1 = M1 /\ I2 = M2 /\ I1 = I2  *)
-(* 
-        assert (H_not_W1: forall r, LocSet.In r R2 -> ~ LocSet.In r W1 -> find r M1 = find r I1 /\ find r M2 = find r I2). admit.
-        assert (H_W1: forall r, LocSet.In r R2 -> LocSet.In r W1 -> find r M1 = find r M2). admit. *)
-
-        (* assert (H_R2_MID: forall r, LocSet.In r R2 -> find r M1 = find r M2). {
-            intros r. intros H_in_R2.
-
-        } *)
-
-        (* assert (H_R2_I1_I2: forall r, LocSet.In r R2 -> find r I1 = find r I2). {
-            intros r. intros H_in_R2.
-            apply H_same_reads. rewrite FSetFact.union_iff. right. easy.
-        } *)
-
-        (* assert (H_W1: forall w, LocSet.In w W1 -> find w M1 = find w M2).
-        {
-            apply IHc1 with (I1:=I1) (O1:=M1) (I2:=I2) (O2:=M2) (R:=R1) (W:=W1); try easy.
-            intros r. specialize (H_same_reads r). intros H_in_R1. apply H_same_reads. rewrite FSetFact.union_iff. left. easy.
-        } *)
-
-        (* assert (H_not_W1: forall w, ~ LocSet.In w W1 -> find w M1 = find w I1 /\ find w M2 = find w I2).
-        {
-            apply IHc1 with (I1:=I1) (O1:=M1) (I2:=I2) (O2:=M2) (R:=R1) (W:=W1); try easy.
-            intros r. specialize (H_same_reads r). intros H_in_R1. apply H_same_reads. rewrite FSetFact.union_iff. left. easy.
-        } *)
-
-
-        (* assert (H_R2_M2_M2_1: forall r, (LocSet.In r R2 ->  find r I1 = find r I2) -> (LocSet.In r W1 -> find r M1 = find r M2)). {
-               intros r. intros H_in_R2.
-               intros H_in_W1. apply H_W1. easy.
-        } *)
-
-        (* assert (H_R2_M2_M2_2: forall r, (LocSet.In r R2 ->  find r I1 = find r I2) -> (~LocSet.In r W1 -> find r M1 = find r I1 /\ find r M2 = find r I2)). {
-            intros r.
-            intros H_in_R2.
-            apply H_not_W1.
-        } *)
-
-        (* assert (H_R2_M2_M2_3: forall r, find r I1 = find r I2 /\ find r M1 = find r I1 /\ find r M2 = find r I2 -> find r M1 = find r M2). {
-            intros r.
-            intros H3.
-            destruct H3.
-            destruct H2.
-            rewrite H1 in H2.
-            apply transitivity with (x:=find r M1) (y:=find r I2) (z:=find r M2); try easy.
-        } *)
-
-
-        (* assert (H_R2_not_W1: forall r, LocSet.In r R2 -> ~LocSet.In w W1 -> find r M1 = find r M2). {
-            intros r.
-            intros H_in_R2.
-            intros H_not_in_W1.
-            admit.
-        }
-
-        assert (H_R2_W1: forall r, LocSet.In r R2 -> LocSet.In w W1 -> find r M1 = find r M2). {
-            admit.
-        } *)
-
-        (* assert (H_not_W1_W2: ~ LocSet.In w W1 /\ LocSet.In w W2 -> find w O1 = find w O2). {
-            intros.
-            destruct H1.
-            apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy.
-             intros r.
-            intro H_in_R2. 
-            apply H_R2_not_W1; try easy. 
-        } *)
-
-        (* assert (H_W1_not_W2_O1_M1: LocSet.In w W1 /\ ~ LocSet.In w W2 -> find w O1 = find w M1 /\ find w O2 = find w M2). {
-            intros H3.
-            destruct H3.
-            apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy.
-            intros r.
-            intro H_in_R2.
-            apply H_R2_W1; try easy.
-        } *)
-
-        (* assert (H_W1_not_W2:
-        ((find w M1 = find w M2) /\ (find w O1 = find w M1) /\ (find w O2 = find w M2))  ->
-        find w O1 = find w O2). {
-            intros H3.
-            destruct H3.
-            destruct H2.
-            rewrite H1 in H2.
-            apply transitivity with (x:=find w O1) (y:=find w M2) (z:=find w O2); try easy.
-        } *)
-
-    
-
-        (* split. *)
-
-(* In W1 U W2 *)
-        (* *  
-        intros H_in_W.
-            rewrite LocSet_union_non_disjoint in H_in_W.
-            destruct H_in_W.
-            -- destruct H1. apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy.
-                intros r.
-                intro H_in_R2.
-                apply H_R2_W1; try easy.
-            -- destruct H1.
-                ++ apply H_W1_not_W2.
-                   split.
-                    ** apply H_W1_not_W2_M1_M2. easy.
-                    ** apply H_W1_not_W2_O1_M1. easy.
-                ++ apply H_not_W1_W2. easy. *)
-(* 
-        * intros H_not_in_W. rewrite <- LocSet_neg_union_1 in H_not_in_W.
-            assert (H_not_W1: ~LocSet.In w W1 /\ ~LocSet.In w W2 -> find w O1 = find w I1). admit.
-            assert (H_not_W2: ~LocSet.In w W1 /\ ~LocSet.In w W2 -> find w O2 = find w I2). admit.
-            split.
-            -- apply H_not_W1. easy.
-            -- apply H_not_W2. easy. *)
-
-(* 
-
-        assert (H_W1: LocSet.In w W1 -> find w O1 = find w O2).
-        {
-            intros H_in_W1.
-            admit.
-        }
-        assert (H_W2: LocSet.In w W2 -> find w O1 = find w O2). admit.
-
-
-
-        (* w in W1 U W2  or w notin*)
-        split.
-        * intros H_in_W. rewrite FSetFact.union_iff in H_in_W. destruct H_in_W as [H_in_W1 | H_in_W2].
-            -- apply H_W1. easy.
-            -- apply H_W2. easy.
-        *  *)
-
-(* 
-
-Lemma S_uses_only_R:
-    forall c (I1 O1 I2 O2: state) (R W: locset),
-    cevalR c I2 (Some O2) ->
-    readR I1 c O1 R ->
-    writeR I1 c O1 W ->
-    (forall r, LocSet.In r R -> find r I1 = find r I2) /\
-    (forall w, 
-        (LocSet.In w W -> find w O1 = find w O2) /\ 
-        (~LocSet.In w W -> find w O1 = find w I1 /\ find w O2 = find w I2)).
-Proof.
-    intros c.
-    (* remember c as c' eqn: Hc. *)
-    induction c.
-    (* Skip *)
-    -  intros * Hceval Hread Hwrite.
-        inversion Hceval. inversion Hread. inversion Hwrite. subst.
-        split.
-        * intros r H_in_R. easy.
-        * intros H_in_w. split; try easy. 
-          intros H_not_in_w. split; try easy. apply no_change_outside_W with (c:=<{ skip }>) (W:= LocSet.empty); try easy.
-
-
-    (* Seq *)
-    - intros * Hceval Hread Hwrite.
-        inversion Hceval as [|? M2|?|?|?|?]. inversion Hread. inversion Hwrite. subst.
-        assert (HM1: M0 = M1). admit. subst. clear H19. clear H16.
-
-        split. 
-        * intros r H_union. rewrite FSetFact.union_iff in H_union. destruct H_union as [H_in_R1 | H_in_R2].
-            -- apply IHc1 with (I1:=I1) (O1:=M1) (I2:=I2) (O2:=M2) (R:=R1) (W:=W1); try easy.
-            -- apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy.
-                
-        * admit.
-
-        (* Do not depend on r2 M2 *)
-        assert (H_W_M1_M2: forall w, LocSet.In w W1 -> find w M1 = find w M2). {
-            intros * H_in_W1.
-            apply IHc1 with (I1:=I1) (O1:=M1) (I2:=I2) (O2:=M2) (R:=R1) (W:=W1); try easy.
-            intros r. specialize (H_same_reads r). intros H_in_R1. apply H_same_reads. rewrite FSetFact.union_iff. left. easy.
-        }
-
-        (* Do not depend on r2 M2 *)
-        assert (H_W1_not_W2_M1_M2: forall w, LocSet.In w W1 /\ ~ LocSet.In w W2 -> find w M1 = find w M2). {
-            intros.
-            apply H_W_M1_M2. easy.
-        }
-    
-
-        (* I1 = M1 /\ I2 = M2 /\ I1 = I2  *)
-(* 
-        assert (H_not_W1: forall r, LocSet.In r R2 -> ~ LocSet.In r W1 -> find r M1 = find r I1 /\ find r M2 = find r I2). admit.
-        assert (H_W1: forall r, LocSet.In r R2 -> LocSet.In r W1 -> find r M1 = find r M2). admit. *)
-
-        (* assert (H_R2_MID: forall r, LocSet.In r R2 -> find r M1 = find r M2). {
-            intros r. intros H_in_R2.
-
-        } *)
-
-        assert (H_R2_not_W1: forall r, ~LocSet.In w W1 /\ LocSet.In r R2 -> find r M1 = find r M2). {
-            intros r.
-            intros H_not_in_W1.
-            destruct H_not_in_W1.
-
-            admit.
-        }
-
-        assert (H_R2_W1: forall r, LocSet.In w W1 /\ LocSet.In r R2 -> find r M1 = find r M2). {
-            admit.
-        }
-
-        assert (H_not_W1_W2: ~ LocSet.In w W1 /\ LocSet.In w W2 -> find w O1 = find w O2). {
-            intros.
-            destruct H1.
-            apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy.
-            intros r.
-            intro H_in_R2. 
-            apply H_R2_not_W1; try easy.
-        }
-
-        assert (H_W1_not_W2_O1_M1: LocSet.In w W1 /\ ~ LocSet.In w W2 -> find w O1 = find w M1 /\ find w O2 = find w M2). {
-            intros H3.
-            destruct H3.
-            apply IHc2 with (I1:=M1) (O1:=O1) (I2:=M2) (O2:=O2) (R:=R2) (W:=W2); try easy.
-            intros r.
-            intro H_in_R2.
-            apply H_R2_W1; try easy.
-        }
-
-        assert (H_W1_not_W2:
-        ((find w M1 = find w M2) /\ (find w O1 = find w M1) /\ (find w O2 = find w M2))  ->
-        find w O1 = find w O2). {
-            intros H3.
-            destruct H3.
-            destruct H2.
-            rewrite H1 in H2.
-            apply transitivity with (x:=find w O1) (y:=find w M2) (z:=find w O2); try easy.
-        } *)

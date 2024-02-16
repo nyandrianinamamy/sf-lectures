@@ -2,11 +2,13 @@ Require Import BinInt.
 Require Import SEM.State.
 Require Import SEM.Syntax.
 
+Require Import Coq.Strings.String.
+
 Import AExp.
 Import BExp.
 Import Com.
 
-Coercion AId : loc >-> aexp.
+Coercion AId : string >-> aexp.
 Coercion ANum : Z >-> aexp.
 
 Declare Custom Entry com.

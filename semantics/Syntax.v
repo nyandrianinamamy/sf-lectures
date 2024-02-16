@@ -6,7 +6,8 @@ Module AExp.
 
 Inductive aexp : Type :=
     | ANum (n: Z)
-    | AId (l: loc)
+    | AId (x: string)
+    | AAddr (x: string)
     | APlus (a1 a2: aexp).
 
 
@@ -31,5 +32,4 @@ Inductive com : Type :=
     | CSeq (c1 c2: com)
     | CAsgn (x:string) (a: aexp)
     | CAlloc (x:string) (mu: string).
-
 End Com.
